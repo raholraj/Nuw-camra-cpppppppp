@@ -18,11 +18,19 @@ jobs:
 
       - name: Extract zip
         run: |
-          unzip jca-dual-camera.zip
+          unzip *.zip
+          echo "--- Extracted contents ---"
           ls -la
 
-      - name: Find gradlew
-        run: find . -name "gradlew" -type f
+      - name: Find and build
+        run: |
+          GRADLEW_PATH=$(find . -name "gradlew" -type f | head -1)
+          echo "Found gradlew at: $GRADLEW_PATH"
+          BUILD_DIR=$(dirname "$GRADLEW_PATH")
+          echo "Build dir: $BUILD_DIR"
+          cd "$BUILD_DIR"
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -30,24 +38,10 @@ jobs:
           distribution: zulu
           java-version: 17
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Make gradlew executable
-        run: |
-          cd jetpack-camera-app-main
-          chmod +x ./gradlew
-
-      - name: Build debug APK
-        run: |
-          cd jetpack-camera-app-main
-          ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: debug-apk
-          path: |
-            jetpack-camera-app-main/**/build/outputs/apk/**/*.apk
+          path: "**/build/outputs/apk/**/*.apk"
           if-no-files-found: warn
           retention-days: 7
