@@ -13,24 +13,55 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Checkout code
+      - name: Checkout our repo (patches)
         uses: actions/checkout@v4
+        with:
+          path: patches
 
-      - name: Extract zip
+      - name: Clone official JCA source
         run: |
-          unzip *.zip
-          echo "--- Extracted contents ---"
+          git clone https://github.com/google/jetpack-camera-app.git jca
+          cd jca
+          echo "JCA cloned successfully"
           ls -la
 
-      - name: Find and build
+      - name: Extract our patch zip
         run: |
-          GRADLEW_PATH=$(find . -name "gradlew" -type f | head -1)
-          echo "Found gradlew at: $GRADLEW_PATH"
-          BUILD_DIR=$(dirname "$GRADLEW_PATH")
-          echo "Build dir: $BUILD_DIR"
-          cd "$BUILD_DIR"
-          chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          cd patches
+          unzip jca-dual-camera.zip -d extracted
+          echo "--- Patch contents ---"
+          ls -la extracted/jca-dualcam/
+
+      - name: Apply patch files to JCA
+        run: |
+          SRC="patches/extracted/jca-dualcam"
+          DST="jca"
+
+          # New model file
+          cp "$SRC/core/model/DualRecordingMode.kt" \
+            "$DST/core/model/src/main/java/com/google/jetpackcamera/model/"
+
+          # Core camera files
+          cp "$SRC/core/camera/CoroutineCameraProvider.kt" \
+            "$DST/core/camera/src/main/java/com/google/jetpackcamera/core/camera/"
+          cp "$SRC/core/camera/CameraSessionSettings.kt" \
+            "$DST/core/camera/src/main/java/com/google/jetpackcamera/core/camera/"
+          cp "$SRC/core/camera/ConcurrentCameraSession.kt" \
+            "$DST/core/camera/src/main/java/com/google/jetpackcamera/core/camera/"
+
+          # UI controller files
+          cp "$SRC/ui/controller/DualCameraController.kt" \
+            "$DST/ui/controller/src/main/java/com/google/jetpackcamera/ui/controller/"
+          cp "$SRC/ui/controller/DualCameraControllerImpl.kt" \
+            "$DST/ui/controller/impl/src/main/java/com/google/jetpackcamera/ui/controller/impl/"
+
+          # UI components
+          cp "$SRC/ui/components/DualCameraComponents.kt" \
+            "$DST/ui/components/capture/src/main/java/com/google/jetpackcamera/ui/components/capture/"
+          cp "$SRC/ui/components/CaptureLayout.kt" \
+            "$DST/ui/components/capture/src/main/java/com/google/jetpackcamera/ui/components/capture/"
+
+          echo "All patches applied!"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -38,10 +69,23 @@ jobs:
           distribution: zulu
           java-version: 17
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        run: |
+          cd jca
+          chmod +x ./gradlew
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            -x test \
+            -x lint
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
-          path: "**/build/outputs/apk/**/*.apk"
+          name: debug-apk-${{ github.sha }}
+          path: jca/**/build/outputs/apk/**/*.apk
           if-no-files-found: warn
           retention-days: 7
